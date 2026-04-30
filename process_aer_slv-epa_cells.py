@@ -3,18 +3,14 @@ import pandas as pd
 import xarray as xr
 import matplotlib.pyplot as plt
 
-# ============================================================
-# File paths
-# ============================================================
+#file paths
 AER_FILE = "/scratch/sjacker2/project_data/merra2_aer_eastern_us_subset_combined.nc"
 MONITOR_FILE = "/scratch/sjacker2/project_data/monthly_pm25_eastern_us_1999_2025.csv"
 
 OUTPUT_NC = "/scratch/sjacker2/project_data/merra2_pm25_monitor_cells_eastern_us_monthly.nc"
 OUTPUT_CSV = "/scratch/sjacker2/project_data/merra2_monitor_cell_pm25_eastern_us_monthly.csv"
 
-# ============================================================
-# Eastern US bounding box
-# ============================================================
+#bounding box for eastern us
 minlat = 25
 maxlat = 50
 minlon = -90
@@ -26,9 +22,7 @@ YEAR_END = 2025
 AER_VARS = ["DUSMASS25", "OCSMASS", "BCSMASS", "SSSMASS25", "SO4SMASS"]
 
 
-# ============================================================
-# Helper: get grid-cell edges from grid-cell centers
-# ============================================================
+#get grid-cell edges from grid-cell centers
 def get_edges_from_centers(centers):
     """
     Given 1D coordinate centers, return grid-cell edges.
@@ -44,9 +38,7 @@ def get_edges_from_centers(centers):
     return edges
 
 
-# ============================================================
-# Helper: assign monitors to MERRA-2 grid cells
-# ============================================================
+#assign monitors to MERRA-2 grid cells
 def assign_monitors_to_grid(monitors, lats, lons):
     """
     Assign each monitor to a MERRA-2 grid cell using lat/lon grid-cell edges.
@@ -56,7 +48,7 @@ def assign_monitors_to_grid(monitors, lats, lons):
     lat_edges = get_edges_from_centers(lats)
     lon_edges = get_edges_from_centers(lons)
 
-    # np.digitize returns index of bin to the right, so subtract 1
+    #np.digitize returns index of bin to the right, so subtract 1
     lat_idx = np.digitize(monitors["Latitude"].values, lat_edges) - 1
     lon_idx = np.digitize(monitors["Longitude"].values, lon_edges) - 1
 
@@ -64,7 +56,7 @@ def assign_monitors_to_grid(monitors, lats, lons):
     monitors["merra_lat_idx"] = lat_idx
     monitors["merra_lon_idx"] = lon_idx
 
-    # Drop monitors that fall outside the MERRA-2 subset grid
+    #drop monitors that fall outside the MERRA-2 subset grid
     monitors = monitors[
         (monitors["merra_lat_idx"] >= 0) &
         (monitors["merra_lat_idx"] < len(lats)) &
@@ -78,20 +70,18 @@ def assign_monitors_to_grid(monitors, lats, lons):
     return monitors
 
 
-# ============================================================
-# Read monitor data and get unique monitor locations
-# ============================================================
+#read monitor data and get unique monitor locations
 mon = pd.read_csv(MONITOR_FILE)
 mon.columns = mon.columns.str.strip()
 
-# Make sure numeric columns are usable
+#make sure numeric columns are usable
 for col in ["Latitude", "Longitude", "year", "month", "monthly_pm25_mean"]:
     if col in mon.columns:
         mon[col] = pd.to_numeric(mon[col], errors="coerce")
 
 mon = mon.dropna(subset=["Latitude", "Longitude"]).copy()
 
-# Keep monitors inside eastern US box
+#keep monitors inside eastern US box
 mon = mon[
     (mon["Latitude"] >= minlat) &
     (mon["Latitude"] <= maxlat) &
@@ -99,7 +89,7 @@ mon = mon[
     (mon["Longitude"] <= maxlon)
 ].copy()
 
-# Create monitor_id if needed
+#create monitor_id if needed
 if "monitor_id" not in mon.columns:
     mon["monitor_id"] = (
         mon["State Code"].astype(str).str.zfill(2) + "-" +
@@ -117,9 +107,7 @@ monitor_locations = (
 print(f"Unique AQS monitors in eastern US box: {len(monitor_locations):,}")
 
 
-# ============================================================
-# Open MERRA-2 aerosol fields
-# ============================================================
+
 ds_aer = xr.open_dataset(AER_FILE)[AER_VARS]
 
 ds_aer = ds_aer.sel(time=slice(f"{YEAR_START}-01-01", f"{YEAR_END}-12-31"))
@@ -129,30 +117,26 @@ print(ds_aer)
 lats = ds_aer["lat"].values
 lons = ds_aer["lon"].values
 
-# If MERRA-2 longitudes are 0 to 360, convert monitor longitudes to 0 to 360
 monitor_locations_for_grid = monitor_locations.copy()
 
 if np.nanmax(lons) > 180:
     monitor_locations_for_grid["Longitude"] = monitor_locations_for_grid["Longitude"] % 360
 
 
-# ============================================================
-# Assign monitors to MERRA-2 cells
-# ============================================================
+#assign monitors to MERRA-2 cells
 monitor_grid = assign_monitors_to_grid(
     monitor_locations_for_grid,
     lats,
     lons
 )
 
-# Keep original negative longitudes for output if converted
 monitor_grid["monitor_lon_original"] = monitor_locations.loc[
     monitor_grid.index, "Longitude"
 ].values
 
 print(f"Monitors successfully assigned to MERRA-2 cells: {len(monitor_grid):,}")
 
-# Unique MERRA-2 cells containing at least one monitor
+#unique MERRA-2 cells containing at least one monitor
 unique_cells = (
     monitor_grid[["merra_lat_idx", "merra_lon_idx", "merra_lat", "merra_lon"]]
     .drop_duplicates()
@@ -161,7 +145,7 @@ unique_cells = (
 
 print(f"Unique MERRA-2 cells containing monitors: {len(unique_cells):,}")
 
-# Count monitors per MERRA-2 cell
+#count monitors per MERRA-2 cell
 cell_counts = (
     monitor_grid
     .groupby(["merra_lat_idx", "merra_lon_idx", "merra_lat", "merra_lon"], as_index=False)
@@ -171,9 +155,7 @@ cell_counts = (
 print(cell_counts.head())
 
 
-# ============================================================
-# Compute dry MERRA-2 PM2.5
-# ============================================================
+#compute dry MERRA-2 PM2.5
 pm25_dry = (
     ds_aer["DUSMASS25"]
     + ds_aer["SSSMASS25"]
@@ -190,9 +172,7 @@ pm25_dry.attrs["units"] = "ug m-3"
 pm25_dry.attrs["long_name"] = "Dry MERRA-2 PM2.5 at grid cells containing AQS monitors"
 
 
-# ============================================================
-# Create a mask for MERRA-2 cells that contain monitors
-# ============================================================
+#create a mask for MERRA-2 cells that contain monitors
 cell_mask = xr.zeros_like(pm25_dry.isel(time=0), dtype=bool)
 
 for _, row in unique_cells.iterrows():
@@ -204,10 +184,8 @@ for _, row in unique_cells.iterrows():
 pm25_monitor_cells = pm25_dry.where(cell_mask)
 
 
-# ============================================================
-# Average only over MERRA-2 cells with monitors
-# ============================================================
-# Option 1: area-weighted mean across unique monitor-containing grid cells
+#average only over MERRA-2 cells with monitors
+#area-weighted mean across unique monitor-containing grid cells
 weights = np.cos(np.deg2rad(pm25_monitor_cells["lat"]))
 weights.name = "weights"
 
@@ -223,8 +201,6 @@ merra_monitor_cell_mean.attrs["description"] = (
     "Area-weighted eastern US mean using only MERRA-2 grid cells that contain at least one AQS monitor"
 )
 
-# Monthly means if your input is not already monthly
-# If your AER_FILE is already monthly, this will not hurt much, but it may group monthly values again.
 merra_monitor_cell_monthly = merra_monitor_cell_mean.resample(time="MS").mean()
 
 out_ds = xr.Dataset({
@@ -246,9 +222,6 @@ print(f"\nSaved monitor-cell-sampled MERRA-2 monthly mean to:")
 print(OUTPUT_NC)
 
 
-# ============================================================
-# Save CSV version
-# ============================================================
 out_df = (
     merra_monitor_cell_monthly
     .to_dataframe()
@@ -266,10 +239,6 @@ print(OUTPUT_CSV)
 print("\nSummary:")
 print(out_df["PM25_mean"].describe())
 
-
-# ============================================================
-# Quick plot
-# ============================================================
 fig, ax = plt.subplots(figsize=(13, 5))
 
 ax.plot(

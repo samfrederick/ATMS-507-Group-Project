@@ -2,9 +2,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-# =========================
-# USER SETTINGS
-# =========================
+#settings
 AER_FILE = "/scratch/sjacker2/project_data/merra2_aer_eastern_us_subset_combined.nc"
 SLV_FILE = "/scratch/sjacker2/project_data/merra2_slv_eastern_us_subset_combined.nc"
 OUTPUT_NC = "/scratch/sjacker2/project_data/merra2_pm25_t2m_eastern_us_monthly_means_DRY.nc"
@@ -46,7 +44,7 @@ def main():
     ds_aer = xr.open_dataset(AER_FILE)[AER_VARS]
     ds_slv = xr.open_dataset(SLV_FILE)[SLV_VARS]
 
-    # Keep overlapping time range
+    #keep overlapping time range
     start_time = max(
         pd.to_datetime(ds_aer.time.values[0]),
         pd.to_datetime(ds_slv.time.values[0])
@@ -62,9 +60,7 @@ def main():
     ds_aer = ds_aer.sel(time=slice(f"{YEAR_START}-01-01", f"{YEAR_END}-12-31"))
     ds_slv = ds_slv.sel(time=slice(f"{YEAR_START}-01-01", f"{YEAR_END}-12-31"))
 
-    # -----------------------------
-    # Correct dry MERRA-2 PM2.5 estimate
-    # -----------------------------
+    #calc dry MERRA-2 PM2.5 estimate
     pm25_dry = (
         ds_aer["DUSMASS25"]
         + ds_aer["SSSMASS25"]
