@@ -10,9 +10,9 @@ import xarray as xr
 # =========================
 # USER SETTINGS
 # =========================
-LINKS_FILE = "subset_M2TMNXSLV_5.12.4_20260422_221953_.txt"
-DOWNLOAD_DIR = Path("merra2_slv_downloads")
-OUTPUT_NC = "merra2_slv_eastern_us_subset_combined.nc"
+LINKS_FILE = "subset_M2TMNXRAD_5.12.4_20260502_154433_.txt"
+DOWNLOAD_DIR = Path("merra2_rad_downloads")
+OUTPUT_NC = "merra2_rad_subset_combined.nc"
 
 # Optional: set to None to process all links found
 MAX_FILES = None
@@ -22,7 +22,7 @@ MAX_RETRIES = 3
 RETRY_DELAY_SEC = 10
 TIMEOUT_SEC = 120
 
-SLV_VARS = ["QV2M", "T2M", "PS"]
+RAD_VARS = ["LWTUP", "SWTDN", "SWTNT"]
 
 
 # =========================
@@ -36,7 +36,7 @@ def extract_urls(txt_path: str) -> list[str]:
     urls = [
         u.strip()
         for u in urls
-        if "opendap.earthdata.nasa.gov" in u and "M2TMNXSLV.5.12.4" in u
+        if "opendap.earthdata.nasa.gov" in u and "M2TMNXRAD.5.12.4" in u
     ]
 
     seen = set()
@@ -53,12 +53,12 @@ def filename_from_url(url: str) -> str:
     """
     Extract a clean local filename from a DAP4 Earthdata URL.
     Example:
-    ...M2TMNXSLV.5.12.4%3AMERRA2_100.tavgM_2d_slv_Nx.198001.nc4.dap.nc4?dap4.ce=...
-    -> MERRA2_100.tavgM_2d_slv_Nx.198001.nc4
+    ...M2TMNXRAD.5.12.4%3AMERRA2_100.tavgM_2d_rad_Nx.198001.nc4.dap.nc4?dap4.ce=...
+    -> MERRA2_100.tavgM_2d_rad_Nx.198001.nc4
     """
     decoded = unquote(url)
 
-    m = re.search(r"M2TMNXSLV\.5\.12\.4:(MERRA2_\d+\.tavgM_2d_slv_Nx\.\d{6}\.nc4)", decoded)
+    m = re.search(r"M2TMNXRAD\.5\.12\.4:(MERRA2_\d+\.tavgM_2d_rad_Nx\.\d{6}\.nc4)", decoded)
     if m:
         return m.group(1)
 
@@ -109,11 +109,11 @@ def download_one_url(session: requests.Session, url: str, out_dir: Path) -> Path
 
 def preprocess_local_file(fp: Path) -> xr.Dataset:
     """
-    Open a downloaded local NetCDF file and keep only the desired SLV vars.
+    Open a downloaded local NetCDF file and keep only the desired RAD vars.
     """
     ds = xr.open_dataset(fp)
 
-    keep_vars = [v for v in SLV_VARS if v in ds.data_vars]
+    keep_vars = [v for v in RAD_VARS if v in ds.data_vars]
     ds = ds[keep_vars]
 
     if "time" in ds.coords:
@@ -140,7 +140,7 @@ def main():
     urls = extract_urls(LINKS_FILE)
 
     if not urls:
-        raise ValueError("No valid M2TMNXSLV OPeNDAP URLs were found in the links file.")
+        raise ValueError("No valid M2TMNXRAD OPeNDAP URLs were found in the links file.")
 
     if MAX_FILES is not None:
         urls = urls[:MAX_FILES]
@@ -188,9 +188,9 @@ def main():
             keep = ~time_index.duplicated()
             combined = combined.isel(time=keep)
 
-    combined.attrs["title"] = "Combined MERRA-2 M2TMNXSLV subset from provided Earthdata DAP4 URLs"
+    combined.attrs["title"] = "Combined MERRA-2 M2TMNXRAD subset from provided Earthdata DAP4 URLs"
     combined.attrs["source_links_file"] = LINKS_FILE
-    combined.attrs["variables"] = ", ".join(SLV_VARS)
+    combined.attrs["variables"] = ", ".join(RAD_VARS)
     combined.attrs["note"] = (
         "Downloaded from provided Earthdata DAP4 subset URLs to local files first, "
         "then concatenated. No spatial or temporal averaging performed."

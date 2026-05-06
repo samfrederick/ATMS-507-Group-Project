@@ -7,23 +7,29 @@ import requests
 import xarray as xr
 
 
-#settings
+# =========================
+# USER SETTINGS
+# =========================
 LINKS_FILE = "subset_M2TMNXAER_5.12.4_20260422_215822_.txt"
 DOWNLOAD_DIR = Path("merra2_aer_downloads")
 OUTPUT_NC = "merra2_aer_eastern_us_subset_combined.nc"
 
-#set to None to process all links found
+# Optional: set to None to process all links found
 MAX_FILES = None
 
-#retry if have download problems
+# Retry behavior
 MAX_RETRIES = 3
 RETRY_DELAY_SEC = 10
 TIMEOUT_SEC = 120
 
 AER_VARS = ["DUSMASS25", "OCSMASS", "BCSMASS", "SSSMASS25", "SO4SMASS"]
 
+
+# =========================
+# HELPERS
+# =========================
 def extract_urls(txt_path: str) -> list[str]:
-    """Extract all HTTPS URLs from the text file I downloaded."""
+    """Extract all HTTPS URLs from the supplied text file."""
     text = Path(txt_path).read_text(encoding="utf-8", errors="ignore")
 
     urls = re.findall(r"https://\S+", text)
@@ -45,7 +51,7 @@ def extract_urls(txt_path: str) -> list[str]:
 
 def filename_from_url(url: str) -> str:
     """
-    Extract a local filename from a DAP4 Earthdata URL.
+    Extract a clean local filename from a DAP4 Earthdata URL.
     Example:
     ...M2TMNXAER.5.12.4%3AMERRA2_100.tavgM_2d_aer_Nx.198001.nc4.dap.nc4?dap4.ce=...
     -> MERRA2_100.tavgM_2d_aer_Nx.198001.nc4
@@ -127,6 +133,9 @@ def preprocess_local_file(fp: Path) -> xr.Dataset:
     return ds
 
 
+# =========================
+# MAIN
+# =========================
 def main():
     print(f"Reading links from: {LINKS_FILE}")
     urls = extract_urls(LINKS_FILE)
@@ -141,8 +150,8 @@ def main():
 
     session = requests.Session()
 
-    #Earthdata works with .netrc automatically through requests,
-    #but this makes sure that session should trust env/netrc config since it was giving me problems earlier
+    # Earthdata often works with .netrc automatically through requests on many systems,
+    # but this line makes it explicit that session should trust env/netrc config.
     session.trust_env = True
 
     downloaded_files = []
