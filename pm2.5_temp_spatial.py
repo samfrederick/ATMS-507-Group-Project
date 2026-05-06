@@ -7,19 +7,13 @@ import xarray as xr
 # =========================
 AER_FILE = "/scratch/sjacker2/project_data/merra2_aer_eastern_us_subset_combined.nc"
 SLV_FILE = "/scratch/sjacker2/project_data/merra2_slv_eastern_us_subset_combined.nc"
-OUTPUT_NC = "/scratch/sjacker2/project_data/merra2_pm25_t2m_eastern_us_monthly_means_DRY.nc"
+OUTPUT_NC = "/scratch/sjacker2/project_data/merra2_pm25_t2m_eastern_us_monthly_fields_DRY.nc"
 
 YEAR_START = 1980
 YEAR_END = 2025
 
 AER_VARS = ["DUSMASS25", "OCSMASS", "BCSMASS", "SSSMASS25", "SO4SMASS"]
 SLV_VARS = ["T2M"]
-
-
-def area_weighted_mean(da):
-    weights = np.cos(np.deg2rad(da["lat"]))
-    weights.name = "weights"
-    return da.weighted(weights).mean(dim=("lat", "lon"))
 
 
 def linear_trend_per_decade(da_time_series):
@@ -64,57 +58,63 @@ def main():
 
     # -----------------------------
     # Correct dry MERRA-2 PM2.5 estimate
+    # Keep full spatial fields for mapping
     # -----------------------------
     pm25_dry = (
         ds_aer["DUSMASS25"]
         + ds_aer["SSSMASS25"]
         + ds_aer["BCSMASS"]
         + ds_aer["OCSMASS"]
-        + ((132.14/96.06) * ds_aer["SO4SMASS"])
+        + ((132.14 / 96.06) * ds_aer["SO4SMASS"])
     ) * 1e9
 
-    pm25_dry.name = "PM25_mean"
+    pm25_dry.name = "PM25_dry"
     pm25_dry.attrs["long_name"] = "Dry total PM2.5 from MERRA-2 aerosol species"
     pm25_dry.attrs["units"] = "ug m-3"
 
-    pm25_mean = area_weighted_mean(pm25_dry)
-    t2m_mean = area_weighted_mean(ds_slv["T2M"])
+    t2m = ds_slv["T2M"].copy()
+    t2m.name = "T2M"
+    t2m.attrs["long_name"] = "2-m air temperature"
+    t2m.attrs["units"] = ds_slv["T2M"].attrs.get("units", "K")
 
-    pm25_mean.name = "PM25_mean"
-    t2m_mean.name = "T2M_mean"
-
-    t2m_mean.attrs["long_name"] = "2-m air temperature"
-    t2m_mean.attrs["units"] = ds_slv["T2M"].attrs.get("units", "K")
-
+    # Output full monthly gridded fields
     out_ds = xr.Dataset({
-        "PM25_mean": pm25_mean,
-        "T2M_mean": t2m_mean,
+        "PM25_dry": pm25_dry,
+        "T2M": t2m,
     })
 
-    out_ds.attrs["title"] = "Monthly eastern US means of dry MERRA-2 PM2.5 and 2-m temperature"
+    out_ds.attrs["title"] = "Monthly eastern US gridded dry MERRA-2 PM2.5 and 2-m temperature"
     out_ds.attrs["pm25_formula"] = (
         "PM2.5_dry = DUSMASS25 + SSSMASS25 + BCSMASS "
-        "+ OCSMASS + 1.375*SO4SMASS"
+        "+ OCSMASS + (132.14/96.06)*SO4SMASS"
     )
+    out_ds.attrs["note"] = "Full clipped eastern US monthly fields; no regional averaging applied."
 
     encoding = {
-        "PM25_mean": {"zlib": True, "complevel": 4},
-        "T2M_mean": {"zlib": True, "complevel": 4},
+        "PM25_dry": {"zlib": True, "complevel": 4},
+        "T2M": {"zlib": True, "complevel": 4},
     }
 
     out_ds.to_netcdf(OUTPUT_NC, encoding=encoding)
 
-    print(f"Saved corrected dry monthly means NetCDF to:\n{OUTPUT_NC}")
+    print(f"Saved corrected dry monthly gridded NetCDF to:\n{OUTPUT_NC}")
 
-    pm25_trend = linear_trend_per_decade(out_ds["PM25_mean"])
-    t2m_trend = linear_trend_per_decade(out_ds["T2M_mean"])
+    # Optional: still print eastern-US average trends for reference
+    weights = np.cos(np.deg2rad(out_ds["lat"]))
+    weights.name = "weights"
 
-    print("\nEastern US monthly-mean trends over full time period:")
-    print(f"PM25_mean dry: {pm25_trend:.6f} ug m-3/decade")
-    print(f"T2M_mean:      {t2m_trend:.6f} K/decade")
+    pm25_mean = out_ds["PM25_dry"].weighted(weights).mean(dim=("lat", "lon"))
+    t2m_mean = out_ds["T2M"].weighted(weights).mean(dim=("lat", "lon"))
 
-    print("\nMonthly PM2.5 summary:")
-    print(out_ds["PM25_mean"].to_series().describe())
+    pm25_trend = linear_trend_per_decade(pm25_mean)
+    t2m_trend = linear_trend_per_decade(t2m_mean)
+
+    print("\nEastern US area-weighted monthly-mean trends over full time period:")
+    print(f"PM25_dry: {pm25_trend:.6f} ug m-3/decade")
+    print(f"T2M:      {t2m_trend:.6f} K/decade")
+
+    print("\nMonthly PM2.5 summary from area-weighted mean:")
+    print(pm25_mean.to_series().describe())
 
     ds_aer.close()
     ds_slv.close()
